@@ -1,0 +1,455 @@
+---
+title: "10ksim_runs"
+author: "Greg Knowlton"
+date: "3/14/2021"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE,
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 12,
+  fig.height = 8,
+  fig.align = "center"
+)
+library(kableExtra)
+library(dplyr)
+library(dampack)
+library(tidyr)
+df <- readRDS("data/basecase_output_cleaned.rds")
+```
+
+prepCov is PrEP coverage (prevalent/eligible population)
+init cov is the coverage of the initiation app (prevalent app users/eligible population)
+
+```{r}
+coverage <- df %>%
+    mutate(Strategy = as.factor(paste0(ifelse(prep.optim.init == T, "I", "-"),
+                                       ifelse(prep.optim.adhr == T, "A", "-"),
+                                       ifelse(prep.optim.retn == T, "P", "-")))) %>%
+    select(-c(prep.optim.init, prep.optim.adhr, prep.optim.retn)) %>%
+  select(Strategy, prep.optim.init.prob, prep.optim.adhr.prob, prep.optim.retn.prob, 
+         prepElig_mean, prepCurr_mean, OptimInitUserPrev_mean, OptimInitUserPop_mean) %>%
+  mutate(prepCov = prepCurr_mean/prepElig_mean,
+         initCov = OptimInitUserPrev_mean / OptimInitUserPop_mean) %>%
+  select(-c(prepElig_mean, prepCurr_mean, OptimInitUserPrev_mean, OptimInitUserPop_mean))
+
+coverage %>%
+  kable() %>%
+  kable_styling()
+```
+
+```{r}
+df[1, ] <- df[16, ]
+df[17, ] <- df[16, ]
+```
+
+BASE CASE COVERAGE
+30% start adherence intervention
+40% start retention intervention
+22.5% of undiagnosed MSM are using initiation app
+
+```{r}
+fixed <- sum((1 - 0.03) ^ (1:(52*10) / 52) * (1659.54*12 / 52))
+init.adj <- 172.33 / 93.28
+
+df_cov <- df[9:16,]
+  df_strat <- df_cov %>%
+    mutate(Strategy = as.factor(paste0(ifelse(prep.optim.init == T, "I", "-"),
+                                       ifelse(prep.optim.adhr == T, "A", "-"),
+                                       ifelse(prep.optim.retn == T, "P", "-")))) %>%
+    select(-c(prep.optim.init, prep.optim.adhr, prep.optim.retn)) %>%
+    rowwise() %>%
+    mutate(cuml.init.int.cost.disc_std = ifelse(cuml.init.int.cost.disc_mean == 0,
+                                                0,
+                                                (cuml.init.int.cost.disc_mean - fixed) * init.adj + fixed),
+           cuml.cost.disc_mean = cuml.cost.disc_mean - cuml.init.int.cost.disc_mean + cuml.init.int.cost.disc_std,
+           int.cost.disc_mean = int.cost.disc_mean - cuml.init.int.cost.disc_mean + cuml.init.int.cost.disc_std)
+
+  plotdat <- df_strat %>% select(Strategy, incid_mean, int.cost.disc_mean,
+                                 cuml.cost.disc_mean, cuml.qaly.disc_mean)
+
+  icer_df <- data.frame(Strategy = unique(df_strat$Strategy))
+  icer_df$cost <- 10*df_strat$cuml.cost.disc_mean
+  icer_df$qaly <- 10*df_strat$cuml.qaly.disc_mean
+
+  icers <- calculate_icers(cost = icer_df$cost,
+                           effect = icer_df$qaly,
+                           strategies = icer_df$Strategy)
+  # icers
+  plot(icers, label = "all")
+
+  extra_outcomes <- plotdat %>%
+    group_by(Strategy) %>%
+    summarize(intervention_cost = 10*mean(int.cost.disc_mean),
+              cuml_incidence = 10*mean(incid_mean),
+              .groups = "keep") %>%
+    ungroup() %>%
+    mutate(infections_averted = (first(cuml_incidence) - cuml_incidence),
+           pct_infections_averted = 100*(infections_averted / (first(cuml_incidence))))
+
+  icers_exp <- left_join(icers, extra_outcomes, by = "Strategy")
+
+  sq <- icers_exp %>% filter(Strategy == "---")
+
+  icers_exp <- icers_exp %>%
+    mutate(pct_intervention_cost = 100 * (intervention_cost / Cost),
+           Cost_sq_diff = Cost - sq$Cost,
+           Effect_sq_diff = Effect - sq$Effect)
+  icers_exp %>% 
+  select(-c("cuml_incidence", "pct_intervention_cost")) %>%
+  kable() %>%
+  kable_styling()
+
+```
+
+
+```{r}
+im.outcomes <- df_strat %>% select(Strategy,
+                                   prep.cost.disc_mean,  cuml.cost.disc_mean,
+                                   cuml.qaly.disc_mean,
+                                   cuml.init.int.cost.disc_std, cuml.adhr.int.cost.disc_mean,
+                                   cuml.retn.int.cost.disc_mean, hiv.test.cost.disc_mean, tot.visit.cost.disc_mean,
+                                   int.cost.disc_mean, cc.cost.disc_mean) %>%
+  group_by(Strategy) %>%
+  summarize(across(everything(), mean, na.rm = TRUE))
+
+cost.long <- im.outcomes %>% select(Strategy, hiv.test.cost.disc_mean,
+                                   tot.visit.cost.disc_mean,
+                                   int.cost.disc_mean,
+                                   cc.cost.disc_mean,
+                                   prep.cost.disc_mean) %>%
+  group_by(Strategy) %>%
+  pivot_longer(cols = 2:6) %>%
+  mutate(name = factor(name,
+                       levels = c("hiv.test.cost.disc_mean",
+                                  "tot.visit.cost.disc_mean",
+                                  "int.cost.disc_mean",
+                                  "cc.cost.disc_mean",
+                                  "prep.cost.disc_mean"),
+                       labels = c("HIV Testing",
+                                  "PrEP Visits",
+                                  "Intervention Costs",
+                                  "Other Clinical Care/Health Care Costs",
+                                  "PrEP Drug Costs")))
+
+sq.cost <- cost.long %>%
+  filter(Strategy == "---") %>%
+  mutate(sq_val = value) %>%
+  ungroup() %>%
+  select(-c(value, Strategy))
+
+diff.cost <- cost.long %>%
+  filter(Strategy != "---") %>%
+  left_join(sq.cost, by = "name") %>%
+  rowwise() %>%
+  mutate(diff = value - sq_val,
+         diff.prop = (value - sq_val)/sq_val)
+
+cost.long.prop <- im.outcomes %>% select(Strategy, hiv.test.cost.disc_mean,
+                                         tot.visit.cost.disc_mean,
+                                         int.cost.disc_mean,
+                                         cc.cost.disc_mean,
+                                         prep.cost.disc_mean) %>%
+  rowwise() %>%
+  mutate(total = sum(c(hiv.test.cost.disc_mean, tot.visit.cost.disc_mean, int.cost.disc_mean, cc.cost.disc_mean, prep.cost.disc_mean)),
+         hiv.test.cost.disc_mean = 100* hiv.test.cost.disc_mean / total,
+         tot.visit.cost.disc_mean = 100 * tot.visit.cost.disc_mean / total,
+         int.cost.disc_mean = 100 * int.cost.disc_mean / total,
+         cc.cost.disc_mean = 100 * cc.cost.disc_mean / total,
+         prep.cost.disc_mean = 100 * prep.cost.disc_mean / total) %>%
+  select(-total) %>%
+  group_by(Strategy) %>%
+  pivot_longer(cols = 2:6) %>%
+  mutate(Cost_source = factor(name,
+                       levels = c("hiv.test.cost.disc_mean",
+                                  "tot.visit.cost.disc_mean",
+                                  "int.cost.disc_mean",
+                                  "cc.cost.disc_mean",
+                                  "prep.cost.disc_mean"),
+                       labels = c("HIV Testing",
+                                  "PrEP Visits",
+                                  "Intervention Costs",
+                                  "Other Clinical Care/Health Care Costs",
+                                  "PrEP Drug Costs")),
+         Proportion_of_total_cost = value) %>% select(-c("name", "value"))
+cost.long.prop %>% kable() %>% kable_styling()
+
+```
+
+```{r, fig.width = 10, fig.height = 1, fig.align = "center"}
+prep.costs <- seq(from = 3000, to = 25188, length.out = 200)
+opt_strat <- rep(NA, 200)
+for (i in 1:length(prep.costs)) {
+  df_strat <- df_cov %>%
+    mutate(Strategy = as.factor(paste0(ifelse(prep.optim.init == T, "I", "-"),
+                                       ifelse(prep.optim.adhr == T, "A", "-"),
+                                       ifelse(prep.optim.retn == T, "P", "-")))) %>%
+    select(-c(prep.optim.init, prep.optim.adhr, prep.optim.retn)) %>%
+  rowwise() %>%
+    mutate(cuml.init.int.cost.disc_std = ifelse(cuml.init.int.cost.disc_mean == 0,
+                                                0,
+                                                (cuml.init.int.cost.disc_mean - fixed) * init.adj + fixed),
+           cuml.cost.disc_mean = cuml.cost.disc_mean - cuml.init.int.cost.disc_mean + cuml.init.int.cost.disc_std - 
+             prep.cost.disc_mean + (prep.cost.disc_mean * (prep.costs[i]/16575.96)),
+           int.cost.disc_mean = int.cost.disc_mean - cuml.init.int.cost.disc_mean + cuml.init.int.cost.disc_std,
+           nmb = 100000*cuml.qaly.disc_mean - cuml.cost.disc_mean) %>%
+    group_by(Strategy) %>%
+    summarize(nmb_mean = mean(nmb, na.rm = TRUE), .groups = "keep")
+
+  opt_strat[i] <- as.character(df_strat$Strategy[which.max(df_strat$nmb_mean)])
+}
+
+opt_df <- data.frame(prep_cost = prep.costs, opt_strat = factor(opt_strat, levels = rev(levels(df_strat$Strategy))))
+
+min <- opt_df %>% group_by(opt_strat) %>% filter(prep_cost == min(prep_cost)) %>% mutate(smin = prep_cost) %>% select(-prep_cost)
+max <- opt_df %>% group_by(opt_strat) %>% filter(prep_cost == max(prep_cost)) %>% mutate(smax = prep_cost) %>% select(-prep_cost)
+opt_plot <- left_join(min, max)
+g <- ggplot(opt_plot) +
+    geom_rect(data = opt_plot, aes(xmin = smin/12, xmax = smax/12,
+                   ymin = 0, ymax = 1,
+                   fill = opt_strat),
+              position = "identity") + xlab("Monthly PrEP cost ($)") +
+    theme(axis.line.y = element_blank(),
+          axis.text.y = element_blank(),
+          axis.title.y = element_blank(),
+          axis.ticks.y = element_blank()) +
+  labs(fill = "Optimal Strategy")
+g
+```
+
+
+```{r, fig.width = 10, fig.height = 4, fig.align = "center"}
+int.cost <- seq(from = 0, to = 5, length.out = 200)
+opt_strat_all <- rep(NA, 200)
+opt_strat_init <- rep(NA, 200)
+opt_strat_adhr <- rep(NA, 200)
+opt_strat_retn <- rep(NA, 200)
+for (i in 1:length(int.cost)) {
+  df_strat <- df_cov %>%
+    mutate(Strategy = as.factor(paste0(ifelse(prep.optim.init == T, "I", "-"),
+                                       ifelse(prep.optim.adhr == T, "A", "-"),
+                                       ifelse(prep.optim.retn == T, "P", "-")))) %>%
+    select(-c(prep.optim.init, prep.optim.adhr, prep.optim.retn)) %>%
+  rowwise() %>%
+    mutate(cuml.init.int.cost.disc_std = ifelse(cuml.init.int.cost.disc_mean == 0,
+                                                0,
+                                                (cuml.init.int.cost.disc_mean - fixed) * init.adj + fixed),
+           int.cost.disc_mean = int.cost.disc_mean - cuml.init.int.cost.disc_mean + cuml.init.int.cost.disc_std,
+           cuml.cost.disc_mean = cuml.cost.disc_mean - cuml.init.int.cost.disc_mean + cuml.init.int.cost.disc_std,
+           cuml.cost.disc_std = cuml.cost.disc_mean - int.cost.disc_mean + int.cost[i]*int.cost.disc_mean,
+           nmb = 100000*cuml.qaly.disc_mean - cuml.cost.disc_std) %>%
+    group_by(Strategy) %>%
+    summarize(nmb_mean = mean(nmb, na.rm = TRUE), .groups = "keep")
+
+  opt_strat_all[i] <- as.character(df_strat$Strategy[which.max(df_strat$nmb_mean)])
+}
+for (i in 1:length(int.cost)) {
+  df_strat <- df_cov %>%
+    mutate(Strategy = as.factor(paste0(ifelse(prep.optim.init == T, "I", "-"),
+                                       ifelse(prep.optim.adhr == T, "A", "-"),
+                                       ifelse(prep.optim.retn == T, "P", "-")))) %>%
+    select(-c(prep.optim.init, prep.optim.adhr, prep.optim.retn)) %>%
+  rowwise() %>%
+    mutate(cuml.init.int.cost.disc_std = ifelse(cuml.init.int.cost.disc_mean == 0,
+                                                0,
+                                                (cuml.init.int.cost.disc_mean - fixed) * init.adj + fixed),
+           int.cost.disc_mean = int.cost.disc_mean - cuml.init.int.cost.disc_mean + cuml.init.int.cost.disc_std,
+           cuml.cost.disc_mean = cuml.cost.disc_mean - cuml.init.int.cost.disc_mean + cuml.init.int.cost.disc_std,
+           cuml.cost.disc_std = cuml.cost.disc_mean - cuml.init.int.cost.disc_std + int.cost[i]*cuml.init.int.cost.disc_std,
+           nmb = 100000*cuml.qaly.disc_mean - cuml.cost.disc_std) %>%
+    group_by(Strategy) %>%
+    summarize(nmb_mean = mean(nmb, na.rm = TRUE), .groups = "keep")
+
+  opt_strat_init[i] <- as.character(df_strat$Strategy[which.max(df_strat$nmb_mean)])
+}
+for (i in 1:length(int.cost)) {
+  df_strat <- df_cov %>%
+    mutate(Strategy = as.factor(paste0(ifelse(prep.optim.init == T, "I", "-"),
+                                       ifelse(prep.optim.adhr == T, "A", "-"),
+                                       ifelse(prep.optim.retn == T, "P", "-")))) %>%
+    select(-c(prep.optim.init, prep.optim.adhr, prep.optim.retn)) %>%
+  rowwise() %>%
+    mutate(cuml.init.int.cost.disc_std = ifelse(cuml.init.int.cost.disc_mean == 0,
+                                                0,
+                                                (cuml.init.int.cost.disc_mean - fixed) * init.adj + fixed),
+           int.cost.disc_mean = int.cost.disc_mean - cuml.init.int.cost.disc_mean + cuml.init.int.cost.disc_std,
+           cuml.cost.disc_mean = cuml.cost.disc_mean - cuml.init.int.cost.disc_mean + cuml.init.int.cost.disc_std,
+           cuml.cost.disc_std = cuml.cost.disc_mean  - cuml.adhr.int.cost.disc_mean + int.cost[i]*cuml.adhr.int.cost.disc_mean,
+           nmb = 100000*cuml.qaly.disc_mean - cuml.cost.disc_std) %>%
+    group_by(Strategy) %>%
+    summarize(nmb_mean = mean(nmb, na.rm = TRUE), .groups = "keep")
+
+  opt_strat_adhr[i] <- as.character(df_strat$Strategy[which.max(df_strat$nmb_mean)])
+}
+for (i in 1:length(int.cost)) {
+  df_strat <- df_cov %>%
+    mutate(Strategy = as.factor(paste0(ifelse(prep.optim.init == T, "I", "-"),
+                                       ifelse(prep.optim.adhr == T, "A", "-"),
+                                       ifelse(prep.optim.retn == T, "P", "-")))) %>%
+    select(-c(prep.optim.init, prep.optim.adhr, prep.optim.retn)) %>%
+  rowwise() %>%
+    mutate(cuml.init.int.cost.disc_std = ifelse(cuml.init.int.cost.disc_mean == 0,
+                                                0,
+                                                (cuml.init.int.cost.disc_mean - fixed) * init.adj + fixed),
+           int.cost.disc_mean = int.cost.disc_mean - cuml.init.int.cost.disc_mean + cuml.init.int.cost.disc_std,
+           cuml.cost.disc_mean = cuml.cost.disc_mean - cuml.init.int.cost.disc_mean + cuml.init.int.cost.disc_std,
+           cuml.cost.disc_std = cuml.cost.disc_mean - cuml.retn.int.cost.disc_mean + int.cost[i]*cuml.retn.int.cost.disc_mean,
+           nmb = 100000*cuml.qaly.disc_mean - cuml.cost.disc_std) %>%
+    group_by(Strategy) %>%
+    summarize(nmb_mean = mean(nmb, na.rm = TRUE), .groups = "keep")
+
+  opt_strat_retn[i] <- as.character(df_strat$Strategy[which.max(df_strat$nmb_mean)])
+}
+
+opt_df <- data.frame(int_cost = int.cost, 
+                     opt_strat = c(factor(opt_strat_all, levels = levels(df_strat$Strategy)),
+                                   factor(opt_strat_init, levels = levels(df_strat$Strategy)),
+                                   factor(opt_strat_adhr, levels = levels(df_strat$Strategy)),
+                                   factor(opt_strat_retn, levels = levels(df_strat$Strategy))),
+                     param = as.factor(c(rep("all", length(int.cost)),
+                               rep("init", length(int.cost)),
+                               rep("adhr", length(int.cost)),
+                               rep("retn", length(int.cost))))) %>%
+  mutate(opt_strat = factor(df_strat$Strategy[opt_strat], levels = rev(levels(df_strat$Strategy))))
+
+min <- opt_df %>% group_by(opt_strat, param) %>% filter(int_cost == min(int_cost)) %>% mutate(smin = int_cost) %>% select(-int_cost)
+max <- opt_df %>% group_by(opt_strat, param) %>% filter(int_cost == max(int_cost)) %>% mutate(smax = int_cost) %>% select(-int_cost)
+opt_plot <- left_join(min, max)
+opt_plot$param <- factor(opt_plot$param, levels = c("all", "init", "adhr", "retn"), labels = c("All", "Initiation", "Adherence", "Persistence"))
+
+
+g_all <- ggplot(opt_plot) +
+    geom_rect(aes_(xmin = as.name("smin"), xmax = as.name("smax"),
+                   ymin = 0, ymax = 1,
+                   fill = as.name("opt_strat")),
+              position = "identity") + xlab("Intervention Cost Scale") +
+    theme(axis.line.y = element_blank(),
+          axis.text.y = element_blank(),
+          axis.title.y = element_blank(),
+          axis.ticks.y = element_blank()) +
+  labs(fill = "Optimal Strategy") +
+  facet_grid(param~.)
+g_all
+```
+
+LOW COVERAGE
+15% start adherence intervention
+20% start retention intervention
+12.5% of undiagnosed MSM are using initiation app
+
+```{r}
+fixed <- sum((1 - 0.03) ^ (1:(52*10) / 52) * (1659.54*12 / 52))
+init.adj <- 172.33 / 93.28
+
+df_cov <- df[1:8,]
+  df_strat <- df_cov %>%
+    mutate(Strategy = as.factor(paste0(ifelse(prep.optim.init == T, "I", "-"),
+                                       ifelse(prep.optim.adhr == T, "A", "-"),
+                                       ifelse(prep.optim.retn == T, "P", "-")))) %>%
+    select(-c(prep.optim.init, prep.optim.adhr, prep.optim.retn)) %>%
+    rowwise() %>%
+    mutate(cuml.init.int.cost.disc_std = ifelse(cuml.init.int.cost.disc_mean == 0,
+                                                0,
+                                                (cuml.init.int.cost.disc_mean - fixed) * init.adj + fixed),
+           cuml.cost.disc_mean = cuml.cost.disc_mean - cuml.init.int.cost.disc_mean + cuml.init.int.cost.disc_std,
+           int.cost.disc_mean = int.cost.disc_mean - cuml.init.int.cost.disc_mean + cuml.init.int.cost.disc_std)
+
+  plotdat <- df_strat %>% select(Strategy, incid_mean, int.cost.disc_mean,
+                                 cuml.cost.disc_mean, cuml.qaly.disc_mean)
+
+  icer_df <- data.frame(Strategy = unique(df_strat$Strategy))
+  icer_df$cost <- 10*df_strat$cuml.cost.disc_mean
+  icer_df$qaly <- 10*df_strat$cuml.qaly.disc_mean
+
+  icers <- calculate_icers(cost = icer_df$cost,
+                           effect = icer_df$qaly,
+                           strategies = icer_df$Strategy)
+  plot(icers, label = "all")
+
+  extra_outcomes <- plotdat %>%
+    group_by(Strategy) %>%
+    summarize(intervention_cost = 10*mean(int.cost.disc_mean),
+              cuml_incidence = 10*mean(incid_mean),
+              .groups = "keep") %>%
+    ungroup() %>%
+    mutate(infections_averted = 10*(first(cuml_incidence) - cuml_incidence),
+           pct_infections_averted = 100*(infections_averted / (10*first(cuml_incidence))))
+
+  icers_exp <- left_join(icers, extra_outcomes, by = "Strategy")
+
+  sq <- icers_exp %>% filter(Strategy == "---")
+
+  icers_exp <- icers_exp %>%
+    mutate(pct_intervention_cost = 100 * (intervention_cost / Cost),
+           Cost_sq_diff = Cost - sq$Cost,
+           Effect_sq_diff = Effect - sq$Effect)
+  icers_exp %>% 
+  select(-c("cuml_incidence", "pct_intervention_cost")) %>%
+  kable() %>%
+  kable_styling()
+
+```
+
+
+
+HIGH COVERAGE
+60% start adherence intervention
+80% start retention intervention
+30.5% of undiagnosed MSM are using initiation app
+
+```{r}
+fixed <- sum((1 - 0.03) ^ (1:(52*10) / 52) * (1659.54*12 / 52))
+init.adj <- 172.33 / 93.28
+
+df_cov <- df[17:24,]
+  df_strat <- df_cov %>%
+    mutate(Strategy = as.factor(paste0(ifelse(prep.optim.init == T, "I", "-"),
+                                       ifelse(prep.optim.adhr == T, "A", "-"),
+                                       ifelse(prep.optim.retn == T, "P", "-")))) %>%
+    select(-c(prep.optim.init, prep.optim.adhr, prep.optim.retn)) %>%
+    rowwise() %>%
+    mutate(cuml.init.int.cost.disc_std = ifelse(cuml.init.int.cost.disc_mean == 0,
+                                                0,
+                                                (cuml.init.int.cost.disc_mean - fixed) * init.adj + fixed),
+           cuml.cost.disc_mean = cuml.cost.disc_mean - cuml.init.int.cost.disc_mean + cuml.init.int.cost.disc_std,
+           int.cost.disc_mean = int.cost.disc_mean - cuml.init.int.cost.disc_mean + cuml.init.int.cost.disc_std)
+
+    plotdat <- df_strat %>% select(Strategy, incid_mean, int.cost.disc_mean,
+                                 cuml.cost.disc_mean, cuml.qaly.disc_mean)
+
+  icer_df <- data.frame(Strategy = unique(df_strat$Strategy))
+  icer_df$cost <- 10*df_strat$cuml.cost.disc_mean
+  icer_df$qaly <- 10*df_strat$cuml.qaly.disc_mean
+
+  icers <- calculate_icers(cost = icer_df$cost,
+                           effect = icer_df$qaly,
+                           strategies = icer_df$Strategy)
+  # icers
+  plot(icers, label = "all")
+
+  extra_outcomes <- plotdat %>%
+    group_by(Strategy) %>%
+    summarize(intervention_cost = 10*mean(int.cost.disc_mean),
+              cuml_incidence = 10*mean(incid_mean),
+              .groups = "keep") %>%
+    ungroup() %>%
+    mutate(infections_averted = 10*(first(cuml_incidence) - cuml_incidence),
+           pct_infections_averted = 100*(infections_averted / (10*first(cuml_incidence))))
+
+  icers_exp <- left_join(icers, extra_outcomes, by = "Strategy")
+
+  sq <- icers_exp %>% filter(Strategy == "---")
+
+  icers_exp <- icers_exp %>%
+    mutate(pct_intervention_cost = 100 * (intervention_cost / Cost),
+           Cost_sq_diff = Cost - sq$Cost,
+           Effect_sq_diff = Effect - sq$Effect)
+  icers_exp %>% 
+  select(-c("cuml_incidence", "pct_intervention_cost")) %>%
+  kable() %>%
+  kable_styling()
+```

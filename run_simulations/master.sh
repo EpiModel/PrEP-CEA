@@ -1,0 +1,10 @@
+#!/bin/bash
+
+sbatch -p ckpt -A csde-ckpt --array=1-120 --nodes=1 --ntasks-per-node=28 --time=00:58:00 --mem=100G --job-name=s1016 --export=ALL,SIMNO=1016,NJOBS=120,NSIMS=10080,PARID=3,INPUT1=0.03,INPUT2=0.6,INPUT3=0.8,INPUT4=FALSE,INPUT5=FALSE,INPUT6=FALSE hyaksim_bc/runsim.sh
+sbatch -p ckpt -A csde-ckpt --array=1-120 --nodes=1 --ntasks-per-node=28 --time=00:58:00 --mem=100G --job-name=s1017 --export=ALL,SIMNO=1017,NJOBS=120,NSIMS=10080,PARID=3,INPUT1=0.03,INPUT2=0.6,INPUT3=0.8,INPUT4=FALSE,INPUT5=FALSE,INPUT6=TRUE hyaksim_bc/runsim.sh
+sbatch -p ckpt -A csde-ckpt --array=1-120 --nodes=1 --ntasks-per-node=28 --time=00:58:00 --mem=100G --job-name=s1018 --export=ALL,SIMNO=1018,NJOBS=120,NSIMS=10080,PARID=3,INPUT1=0.03,INPUT2=0.6,INPUT3=0.8,INPUT4=FALSE,INPUT5=TRUE,INPUT6=FALSE hyaksim_bc/runsim.sh
+sbatch -p ckpt -A csde-ckpt --array=1-120 --nodes=1 --ntasks-per-node=28 --time=00:58:00 --mem=100G --job-name=s1019 --export=ALL,SIMNO=1019,NJOBS=120,NSIMS=10080,PARID=3,INPUT1=0.03,INPUT2=0.6,INPUT3=0.8,INPUT4=FALSE,INPUT5=TRUE,INPUT6=TRUE hyaksim_bc/runsim.sh
+sbatch -p ckpt -A csde-ckpt --array=1-120 --nodes=1 --ntasks-per-node=28 --time=00:58:00 --mem=100G --job-name=s1020 --export=ALL,SIMNO=1020,NJOBS=120,NSIMS=10080,PARID=3,INPUT1=0.03,INPUT2=0.6,INPUT3=0.8,INPUT4=TRUE,INPUT5=FALSE,INPUT6=FALSE hyaksim_bc/runsim.sh
+sbatch -p ckpt -A csde-ckpt --array=1-120 --nodes=1 --ntasks-per-node=28 --time=00:58:00 --mem=100G --job-name=s1021 --export=ALL,SIMNO=1021,NJOBS=120,NSIMS=10080,PARID=3,INPUT1=0.03,INPUT2=0.6,INPUT3=0.8,INPUT4=TRUE,INPUT5=FALSE,INPUT6=TRUE hyaksim_bc/runsim.sh
+sbatch -p ckpt -A csde-ckpt --array=1-120 --nodes=1 --ntasks-per-node=28 --time=00:58:00 --mem=100G --job-name=s1022 --export=ALL,SIMNO=1022,NJOBS=120,NSIMS=10080,PARID=3,INPUT1=0.03,INPUT2=0.6,INPUT3=0.8,INPUT4=TRUE,INPUT5=TRUE,INPUT6=FALSE hyaksim_bc/runsim.sh
+sbatch -p ckpt -A csde-ckpt --array=1-120 --nodes=1 --ntasks-per-node=28 --time=00:58:00 --mem=100G --job-name=s1023 --export=ALL,SIMNO=1023,NJOBS=120,NSIMS=10080,PARID=3,INPUT1=0.03,INPUT2=0.6,INPUT3=0.8,INPUT4=TRUE,INPUT5=TRUE,INPUT6=TRUE hyaksim_bc/runsim.sh

@@ -1,0 +1,156 @@
+---
+title: "10ksim_payerperspective"
+author: "Greg Knowlton"
+date: "3/14/2021"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE,
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 12,
+  fig.height = 8,
+  fig.align = "center"
+)
+library(kableExtra)
+library(dplyr)
+# library(tidyverse)
+library(dampack)
+library(tidyr)
+df <- readRDS("data/basecase_output_cleaned.rds")
+```
+
+prepCov is PrEP coverage (prevalent/eligible population)
+init cov is the coverage of the initiation app (prevalent app users/eligible population)
+
+```{r}
+df[1, ] <- df[16, ]
+df[17, ] <- df[16, ]
+```
+
+LOW COVERAGE
+15% start adherence intervention
+20% start retention intervention
+12.5% of undiagnosed MSM are using initiation app
+
+```{r}
+fixed <- sum((1 - 0.03) ^ (1:(52*10) / 52) * (1659.54*12 / 52))
+init.adj <- 172.33 / 93.28
+
+df_cov <- df[1:8,]
+  df_strat <- df_cov %>%
+    mutate(Strategy = as.factor(paste0(ifelse(prep.optim.init == T, "I", "-"),
+                                       ifelse(prep.optim.adhr == T, "A", "-"),
+                                       ifelse(prep.optim.retn == T, "P", "-")))) %>%
+    select(-c(prep.optim.init, prep.optim.adhr, prep.optim.retn)) %>%
+    rowwise() %>%
+    mutate(cuml.init.int.cost.disc_std = ifelse(cuml.init.int.cost.disc_mean == 0,
+                                                0,
+                                                (cuml.init.int.cost.disc_mean - fixed) * init.adj + fixed),
+           cuml.cost.disc_mean = int.cost.disc_mean - cuml.init.int.cost.disc_mean + cuml.init.int.cost.disc_std,
+           int.cost.disc_mean = int.cost.disc_mean - cuml.init.int.cost.disc_mean + cuml.init.int.cost.disc_std)
+
+  plotdat <- df_strat %>% select(Strategy, incid_mean, int.cost.disc_mean,
+                                 cuml.cost.disc_mean, cuml.qaly.disc_mean)
+
+  icer_df <- data.frame(Strategy = unique(df_strat$Strategy))
+  icer_df$cost <- 10*df_strat$cuml.cost.disc_mean
+  icer_df$qaly <- 10*df_strat$cuml.qaly.disc_mean
+
+  icers <- calculate_icers(cost = icer_df$cost,
+                           effect = icer_df$qaly,
+                           strategies = icer_df$Strategy)
+  # icers
+  plot(icers, label = "all")
+
+  icers %>% 
+  kable() %>%
+  kable_styling()
+
+```
+
+BASE CASE COVERAGE
+30% start adherence intervention
+40% start retention intervention
+22.5% of undiagnosed MSM are using initiation app
+
+```{r}
+fixed <- sum((1 - 0.03) ^ (1:(52*10) / 52) * (1659.54*12 / 52))
+init.adj <- 172.33 / 93.28
+
+df_cov <- df[9:16,]
+  df_strat <- df_cov %>%
+    mutate(Strategy = as.factor(paste0(ifelse(prep.optim.init == T, "I", "-"),
+                                       ifelse(prep.optim.adhr == T, "A", "-"),
+                                       ifelse(prep.optim.retn == T, "P", "-")))) %>%
+    select(-c(prep.optim.init, prep.optim.adhr, prep.optim.retn)) %>%
+    rowwise() %>%
+    mutate(cuml.init.int.cost.disc_std = ifelse(cuml.init.int.cost.disc_mean == 0,
+                                                0,
+                                                (cuml.init.int.cost.disc_mean - fixed) * init.adj + fixed),
+           cuml.cost.disc_mean = int.cost.disc_mean - cuml.init.int.cost.disc_mean + cuml.init.int.cost.disc_std,
+           int.cost.disc_mean = int.cost.disc_mean - cuml.init.int.cost.disc_mean + cuml.init.int.cost.disc_std)
+
+  plotdat <- df_strat %>% select(Strategy, incid_mean, int.cost.disc_mean,
+                                 cuml.cost.disc_mean, cuml.qaly.disc_mean)
+
+  icer_df <- data.frame(Strategy = unique(df_strat$Strategy))
+  icer_df$cost <- 10*df_strat$cuml.cost.disc_mean
+  icer_df$qaly <- 10*df_strat$cuml.qaly.disc_mean
+
+  icers <- calculate_icers(cost = icer_df$cost,
+                           effect = icer_df$qaly,
+                           strategies = icer_df$Strategy)
+  # icers
+  plot(icers, label = "all")
+
+  
+  icers %>% 
+  kable() %>%
+  kable_styling()
+
+```
+
+HIGH COVERAGE
+60% start adherence intervention
+80% start retention intervention
+30.5% of undiagnosed MSM are using initiation app
+
+```{r}
+fixed <- sum((1 - 0.03) ^ (1:(52*10) / 52) * (1659.54*12 / 52))
+init.adj <- 172.33 / 93.28
+
+df_cov <- df[17:24,]
+  df_strat <- df_cov %>%
+    mutate(Strategy = as.factor(paste0(ifelse(prep.optim.init == T, "I", "-"),
+                                       ifelse(prep.optim.adhr == T, "A", "-"),
+                                       ifelse(prep.optim.retn == T, "P", "-")))) %>%
+    select(-c(prep.optim.init, prep.optim.adhr, prep.optim.retn)) %>%
+    rowwise() %>%
+    mutate(cuml.init.int.cost.disc_std = ifelse(cuml.init.int.cost.disc_mean == 0,
+                                                0,
+                                                (cuml.init.int.cost.disc_mean - fixed) * init.adj + fixed),
+           cuml.cost.disc_mean = int.cost.disc_mean - cuml.init.int.cost.disc_mean + cuml.init.int.cost.disc_std,
+           int.cost.disc_mean = int.cost.disc_mean - cuml.init.int.cost.disc_mean + cuml.init.int.cost.disc_std)
+
+    plotdat <- df_strat %>% select(Strategy, incid_mean, int.cost.disc_mean,
+                                 cuml.cost.disc_mean, cuml.qaly.disc_mean)
+
+  icer_df <- data.frame(Strategy = unique(df_strat$Strategy))
+  icer_df$cost <- 10*df_strat$cuml.cost.disc_mean
+  icer_df$qaly <- 10*df_strat$cuml.qaly.disc_mean
+
+  icers <- calculate_icers(cost = icer_df$cost,
+                           effect = icer_df$qaly,
+                           strategies = icer_df$Strategy)
+  # icers
+  plot(icers, label = "all")
+
+  icers %>% 
+  kable() %>%
+  kable_styling()
+```
+
